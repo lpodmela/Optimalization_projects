@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 A = 1
 B = 5
 
+
 ITERATIONS = 100
 MAX_CALLS = 1000
 
