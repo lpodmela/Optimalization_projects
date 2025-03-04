@@ -6,6 +6,8 @@ A = 1
 B = 5
 
 
+ROUND = 10 # Zaokrouhleni (pocet des. mist) finalniho vysledku (zaokrouhleni pouze pro print)
+
 ITERATIONS = 100
 MAX_CALLS = 1000
 
@@ -13,51 +15,30 @@ START_X, START_Y = -1, -1
 
 STOP_CRITERION = 1e-2
 
-DELTA = 1e-4
-EPS_CYCLIC = 1e-2
+DELTA_CYCLIC = 1e-4
+EPS_CYCLIC = 1e-6
+
 EPS_HOOKE_JEEVES = 1e-6
 ALPHA_HOOKE_JEEVES = 1
+GAMA_HOOKE_JEEVES = .5
+
+EPS_NELDER_MEAD = 1e-8
+DELTA_NELDER_MEAD = 1e-6
+ALPHA_NELDER_MEAD = 1
+BETA_NELDER_MEAD = 2
+GAMA_NELDER_MEAD = .5
+
+EPS_QUASI_NEWTON = 1e-6
 
 SIMPLEX_S = np.array([
     [-1, -0.8, -0.5],
     [-1, -0.8, -1]
 ])
 
-
-
-
-# Volba metody, pro conjugate descent = False
-GRADIENT_DESCENT_METHOD = 1
-OPTIMAL_ALPHA = 1
-
 # Rosenbrockova funkce + gradient
 f = lambda x, y: (A - x)**2 + B * (y - x**2)**2
 
 df = lambda x, y: np.array([-2 * (A - x) - 4 * B * x * (y - x**2), 2 * B * (y - x**2)])
-
-class DFP:
-    def __init__(self, m):
-        self.Q = np.eye(m)
-
-    def init(self, f, grad_f, x):
-        self.m = len(x)
-        self.Q = np.eye(self.m)  # Inicializace identity matice
-
-    def step(self, f, grad_f, x):
-        g = grad_f(x[0], x[1])  # Gradient
-        d = -np.dot(self.Q, g)  # Směr klesání
-        alpha = line_search(f, x, d)  # Hledání optimálního kroku
-        x_new = x + alpha * d  # Nový bod
-
-        g_new = grad_f(x_new[0], x_new[1])  # Nový gradient
-        delta_x = x_new - x
-        delta_g = g_new - g
-
-        # Aktualizace matice Q podle DFP metody
-        self.Q = self.Q - np.outer(np.dot(self.Q, delta_g), np.dot(self.Q, delta_g)) / np.dot(delta_g, np.dot(self.Q, delta_g)) \
-                    + np.outer(delta_x, delta_x) / np.dot(delta_x, delta_g)
-        
-        return x_new
 
 
 def fibonacci_search(f, a, b, n=50, eps=0.01):
@@ -89,10 +70,10 @@ def line_search(f, x, d):
     alpha_opt = fibonacci_search(f_line, a, b)
     return alpha_opt
 
-def cyclic_coordinate_descent_with_acceleration_step(f, x0, y0, eps, max_calls=MAX_CALLS, max_iter = ITERATIONS):
+def cyclic_coordinate_descent_with_acceleration_step(f, x0, y0, eps = EPS_CYCLIC, max_calls=MAX_CALLS, max_iter = ITERATIONS):
     x = np.array([x0, y0])
     n = len(x)
-    delta = np.inf
+    delta = DELTA_CYCLIC
     history = []
     function_calls = 0
     iter = 0
@@ -103,9 +84,10 @@ def cyclic_coordinate_descent_with_acceleration_step(f, x0, y0, eps, max_calls=M
         for i in range(n):
             if function_calls >= max_calls:
                 break
-            d = np.zeros(n)
-            d[i] = 1  # Jednosměrný základní vektor
-            
+           
+            # basis(i, n)
+            d = np.eye(n)[i]
+
             # Hledání optimálního kroku podél souřadnice
             alpha = line_search(f, x, d)
             x = x + alpha * d
@@ -126,15 +108,15 @@ def cyclic_coordinate_descent_with_acceleration_step(f, x0, y0, eps, max_calls=M
         iter += 1
         
         delta = np.linalg.norm(x - x_prev)
-    print(f"Minimum cyclic coordinate descent: x= {x[0]}, y ={x[1]}, f(x,y) = {f(x[0], x[1])}")
+    print(f"Minimum metodou Cyclic coordinate descent: x = {round(x[0], ROUND)}, y = {round(x[1], ROUND)}, f(x,y) = {round(f(x[0], x[1]), ROUND)}, počet iterací = {iter}, funkčních volání = {function_calls}")
     return history
 
-def hooke_jeeves(f, x0, y0, alpha, eps, gamma = 0.5, max_calls = MAX_CALLS, max_iter = ITERATIONS):
+def hooke_jeeves(f, x0, y0, alpha, eps, gamma = GAMA_HOOKE_JEEVES, max_calls = MAX_CALLS, max_iter = ITERATIONS):
     x = np.array([x0, y0])
     y = f(x[0], x[1])
     n = len(x)
     history = []
-    function_calls = 0
+    function_calls = 1
     iter = 0
 
     while alpha > eps and function_calls < max_calls and iter < max_iter:
@@ -142,37 +124,31 @@ def hooke_jeeves(f, x0, y0, alpha, eps, gamma = 0.5, max_calls = MAX_CALLS, max_
         x_best, y_best = x, y
         for i in range(n):
             for sgn in (-1, 1):
-                x_prime = x + sgn * alpha * np.eye(n)[i]
-                y_prime = f(x_prime[0], x_prime[1])
+                x_n = x + sgn * alpha * np.eye(n)[i]
+                y_n = f(x_n[0], x_n[1])
                 function_calls += 1
-                if y_prime < y_best:
-                    x_best, y_best = x_prime, y_prime
+                if y_n < y_best:
+                    x_best, y_best = x_n, y_n
                     improved = True
         x, y = x_best, y_best
         if not improved:
             alpha *= gamma
         history.append((x[0], x[1], f(x[0], x[1])))
         iter += 1
-    print(f"Minimum hooke jeeves: x= {x[0]}, y ={x[1]}, f(x,y) = {f(x[0], x[1])}")
+    print(f"Minimum metodou Hooke-Jeeves: x = {round(x[0], ROUND)}, y = {round(x[1], ROUND)}, f(x,y) = {round(f(x[0], x[1]), ROUND)}, počet iterací = {iter}, funkčních volání = {function_calls}")
     return history 
 
-def nelder_mead(f, S, epsilon = 1e-4, alpha = 1, beta = 2, gamma = 0.5):
-    S = np.array(S)
+def nelder_mead(f, S, epsilon = EPS_NELDER_MEAD, alpha = ALPHA_NELDER_MEAD, beta = BETA_NELDER_MEAD, gamma = GAMA_NELDER_MEAD):
     n = S.shape[0]
     history = []
-    function_calls = 0
     iter = 0
+    function_calls = 0
 
-    def evaluate_simplex(S):
-        return np.array([f(S[0, i], S[1, i]) for i in range(S.shape[1])])
-
-
-    y = evaluate_simplex(S)
+    y = np.array([f(S[0, i], S[1, i]) for i in range(S.shape[1])])
     function_calls += n
-    delta = np.inf
+    delta = DELTA_NELDER_MEAD
 
     while delta > epsilon and iter < ITERATIONS and function_calls < MAX_CALLS:
-        iter += 1
         indices = np.argsort(y)
         S = S[:, indices]
         y = y[indices]
@@ -202,37 +178,56 @@ def nelder_mead(f, S, epsilon = 1e-4, alpha = 1, beta = 2, gamma = 0.5):
             else:
                 S[:, -1] = x_r
                 y[-1] = y_r
-        elif y_l <= y_r < y_s:
-            S[:, -1] = x_r
-            y[-1] = y_r
-        else:
-            if y_r < y_h:
-                x_c = x_m + gamma * (x_r - x_m)
-            else:
-                x_c = x_m + gamma * (x_h - x_m)
-            
+        elif y_r > y_s:
+            if y_r <= y_h:
+                x_h, y_h, S[:, -1], y[-1] = x_r, y_r, x_r, y_r
+
+            x_c = x_m + gamma * (x_h - x_m)    
             y_c = f(x_c[0], x_c[1])
             function_calls += 1
 
-            if y_c < min(y_h, y_r):
-                S[:, -1] = x_c
-                y[-1] = y_c
-            else:
-                for i in range(1, S.shape[1]):
-                    S[:, i] = x_l + 0.5 * (S[:, i] - x_l)
-                    y[i] = f(S[:, i])
+            if y_c > y_h:
+                for i in range(1, len(y)):
+                    S[:, i] = (S[:, i] + x_l) /2
+                    y[i] = f(S[0, i], S[1,i])
                     function_calls += 1
+            else:
+                S[:,-1] = x_c
+                y[-1] = y_c
+        else:
+            S[:,-1] = x_r
+            y[-1] = y_r
         
         delta = np.std(y)
         history.append((S[0, 0], S[1, 0], y[0]))
-    print(f"Minimum nelder mead: {S[:, np.argmin(y)]}, f(x, y) = {f(*S[:, np.argmin(y)])}")
+        iter += 1
+    print(f"Minimum metodou Nelder-Mead: x = {round(S[0, 0], ROUND)}, y = {round(S[1,0], ROUND)}, f(x, y) = {round(y[0], ROUND)}, počet iterací = {iter}, funkčních volání = {function_calls}")
     return history
 
-def quasi_newton_method(f, grad_f, x0, eps=1e-6, max_iter=100, max_calls=1000):
-    m = len(x0)
-    method = DFP(m)
-    method.init(f, grad_f, x0)
-    
+class DFP:
+    def __init__(self, x):
+        self.m = len(x)
+        self.Q = np.eye(self.m)
+        
+
+    def step(self, f, grad_f, x):
+        g = grad_f(x[0], x[1])
+        d = -np.dot(self.Q, g)
+        alpha = line_search(f, x, d) 
+        x_new = x + alpha * d  # Nový bod
+
+        g_new = grad_f(x_new[0], x_new[1])  # Nový gradient
+        delta_x = x_new - x
+        delta_g = g_new - g
+
+        # Aktualizace matice Q, roznasobeni matic (...) * (...)
+        self.Q = self.Q - np.outer(np.dot(self.Q, delta_g), np.dot(self.Q, delta_g)) / np.dot(delta_g, np.dot(self.Q, delta_g)) \
+                    + np.outer(delta_x, delta_x) / np.dot(delta_x, delta_g)
+        
+        return x_new
+
+def quasi_newton_method(f, grad_f, x0, eps = EPS_QUASI_NEWTON, max_iter = ITERATIONS, max_calls = MAX_CALLS):
+    method = DFP(x0)
     x = np.array(x0)
     history = []
     function_calls = 0
@@ -248,7 +243,7 @@ def quasi_newton_method(f, grad_f, x0, eps=1e-6, max_iter=100, max_calls=1000):
         # Podmínka konvergence
         if np.linalg.norm(grad_f(x[0], x[1])) < eps:
             break
-    print(f"Minimum quasi newton: x= {x[0]}, y ={x[1]}, f(x,y) = {f(x[0], x[1])}")
+    print(f"Minimum metodou Quasi-Newton: x = {round(x[0], ROUND)}, y = {round(x[1], ROUND)}, f(x,y) = {round(f(x[0], x[1]), ROUND)}, počet iterací = {iter}, funkčních volání = {function_calls}")
     return history
 
 def visualize(f, history, method_name):
@@ -293,11 +288,11 @@ def visualize(f, history, method_name):
 
 
 if __name__ == "__main__":
-    history_cyclic = cyclic_coordinate_descent_with_acceleration_step(f, START_X, START_Y, EPS_CYCLIC)
+    history_cyclic = cyclic_coordinate_descent_with_acceleration_step(f, START_X, START_Y)
     history_hooke = hooke_jeeves(f, START_X, START_Y, ALPHA_HOOKE_JEEVES, EPS_HOOKE_JEEVES)
     history_nelder = nelder_mead(f, SIMPLEX_S)
     history_quasi = quasi_newton_method(f, df, [START_X, START_Y])
-    print(f"Optimalni minimum pro Rosenbrockovu funkci x_opt = {A}, y_opt = {A**2}, f(x_opt, y_opt) = 0")
+    print(f"Optimálni minimum pro Rosenbrockovu funkci x_opt = {A}, y_opt = {A**2}, f(x_opt, y_opt) = 0")
     visualize(f, history_cyclic, "Cyclic coordinate descent")
     visualize(f, history_hooke, "Hooke-Jeeves")
     visualize(f, history_nelder, "Nelder-Mead")
